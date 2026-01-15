@@ -125,8 +125,8 @@ const SimulationSetupPage = () => {
   }));
 
   return (
-    <Container maxWidth={false} sx={{ py: 4, px: { xs: 2, sm: 4, md: 6 } }}>
-      <Paper elevation={3} sx={{ p: 4 }}>
+    <Container maxWidth={false} sx={{ py: 4, px: { xs: 2, sm: 4, md: 6 }, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <Paper elevation={3} sx={{ p: 4, flex: 1, display: 'flex', flexDirection: 'column' }}>
         <Typography variant="h4" gutterBottom sx={{ mb: 4 }}>
           Simulation Setup
         </Typography>
@@ -153,7 +153,7 @@ const SimulationSetupPage = () => {
           </Box>
         )}
 
-        <Box sx={{ minHeight: 500 }}>
+        <Box sx={{ minHeight: { xs: 400, sm: 500, md: 600 }, flex: 1, display: 'flex', flexDirection: 'column' }}>
           {activeStep === 0 && (
             <VehiclesConfigSection
               config={vehicleConfig}
@@ -170,7 +170,7 @@ const SimulationSetupPage = () => {
             />
           )}
           {activeStep === 3 && (
-            <Box>
+            <Box sx={{ flex: 1 }}>
               <Typography variant="h6" gutterBottom>
                 Review Configuration
               </Typography>
@@ -230,7 +230,7 @@ const SimulationSetupPage = () => {
           )}
         </Box>
 
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 'auto', pt: 4 }}>
           <Button disabled={activeStep === 0} onClick={handleBack}>
             Back
           </Button>

@@ -45,7 +45,7 @@ const SimulationMapPage = () => {
   };
 
   return (
-    <Box sx={{ height: '100vh', width: '100vw', position: 'relative' }}>
+    <Box sx={{ height: '100vh', width: '100%', position: 'relative', overflow: 'hidden' }}>
       <EnhancedFloatingMenu
         vehicles={filteredVehicles}
         hubs={displayHubs}
