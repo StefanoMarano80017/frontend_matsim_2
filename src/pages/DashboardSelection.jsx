@@ -23,7 +23,7 @@ const DashboardSelection = () => {
     {
       id: 'user',
       title: 'User Dashboard',
-      description: 'Plan your route with optimal charging stops',
+      description: 'Pianifica la tua ricarica',
       icon: <DirectionsCarIcon sx={{ fontSize: 40, color: '#2196f3' }} />,
       route: '/user/dashboard',
       enabled: true,
@@ -32,7 +32,7 @@ const DashboardSelection = () => {
     {
       id: 'simulation',
       title: 'Simulation Dashboard',
-      description: 'Setup and monitor multi-vehicle simulations',
+      description: 'Configura e monitora simulazioni multi-veicolo',
       icon: <TimelineIcon sx={{ fontSize: 40, color: '#4caf50' }} />,
       route: '/simulation/setup',
       enabled: true,
@@ -41,7 +41,7 @@ const DashboardSelection = () => {
     {
       id: 'hub-manager',
       title: 'Hub Manager Dashboard',
-      description: 'Manage charging hubs and monitor stall occupancy',
+      description: 'Gestisci hub di ricarica e monitora l\'occupazione degli stall',
       icon: <EvStationIcon sx={{ fontSize: 40, color: '#ff9800' }} />,
       route: '/hub/dashboard',
       enabled: chargingHubs && chargingHubs.length > 0,
@@ -63,17 +63,18 @@ const DashboardSelection = () => {
           Dashboard Selection
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Select an operational environment to manage your fleet
+          Seleziona una delle dashboard disponibili per accedere alle funzionalità specifiche.
         </Typography>
       </Box>
 
-      <Grid container spacing={3} sx={{ flexGrow: 1 }}>
+      <Grid container spacing={6}>
         {dashboards.map((dashboard) => (
-          <Grid item xs={12} md={6} lg={4} key={dashboard.id}>
+          <Grid item xs={12} md={6} lg={3} key={dashboard.id}>
             <Card
               variant="outlined"
               onClick={() => dashboard.enabled && navigate(dashboard.route)}
               sx={{
+                width: '100%',
                 height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
