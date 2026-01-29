@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { useSimulation } from '../contexts/SimulationContext';
 
 export const useHubStatistics = () => {
-  const { monitoringHubs, chargingHubs } = useSimulation();
+  const { hubs: contextHubs } = useSimulation();
   const [hubStats, setHubStats] = useState({});
 
   useEffect(() => {
-    const hubs = monitoringHubs.length > 0 ? monitoringHubs : chargingHubs || [];
+    const hubs = contextHubs || [];
 
     const stats = {};
     hubs.forEach((hub) => {
@@ -24,7 +24,7 @@ export const useHubStatistics = () => {
     });
 
     setHubStats(stats);
-  }, [monitoringHubs, chargingHubs]);
+  }, [contextHubs]);
 
   return hubStats;
 };

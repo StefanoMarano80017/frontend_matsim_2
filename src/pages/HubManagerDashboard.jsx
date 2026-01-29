@@ -72,8 +72,8 @@ const HubManagerDashboard = () => {
   ];
 
   const navigate = useNavigate();
-  const { monitoringHubs, chargingHubs } = useSimulation();
-  const hubs = monitoringHubs.length > 0 ? monitoringHubs : chargingHubs || mockHubs;
+  const { hubs: contextHubs } = useSimulation();
+  const hubs = contextHubs.length > 0 ? contextHubs : mockHubs;
   const [selectedHubId, setSelectedHubId] = useState(hubs.length > 0 ? hubs[0].id : null);
 
   const [selectedHubStructure, setHubStructure] = useState(DEFAULT_HUB_STRUCTURE);

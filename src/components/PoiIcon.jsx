@@ -2,41 +2,29 @@ import L from 'leaflet';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { POI_TYPES } from './poiRegistry';
 
-export const createCustomIcon = (type, state = null) => {
-  // Get base configuration
+export const createCustomIcon = (type, state = null, stateConfig) => {
+  // Config di base dal tipo di POI
   const config = POI_TYPES[type] || POI_TYPES.hub;
 
-  // Determine color based on type and state
-  let color = config.color;
-  let bgColor = '#ffffff';
+  // Colore predefinito
+  let color = config.color || '#333';
+  let bgColor = '#fff';
   let borderColor = '#333';
 
+  // Se è un veicolo, usa STATE_CONFIG
   if (type === 'vehicle' && state) {
-    // Vehicle colors based on state
-    switch (state) {
-      case 'charging':
-        color = '#4caf50'; // Green
-        bgColor = '#e8f5e9';
-        borderColor = '#4caf50';
-        break;
-      case 'moving':
-        color = '#2196f3'; // Blue
-        bgColor = '#e3f2fd';
-        borderColor = '#2196f3';
-        break;
-      case 'idle':
-        color = '#ff9800'; // Orange
-        bgColor = '#fff3e0';
-        borderColor = '#ff9800';
-        break;
-      default:
-        color = config.color;
-    }
-  } else if (type === 'hub') {
-    // Hub always green for charging
-    color = '#4caf50';
-    bgColor = '#e8f5e9';
-    borderColor = '#4caf50';
+    const stateKey = state.toLowerCase();
+    const stateCfg = stateConfig[stateKey] || stateConfig.unknown;
+
+    color = stateCfg.color;
+    // Sfondo leggermente più chiaro rispetto al colore principale
+    borderColor = color;
+  }
+
+  // Hub: usa config POI o fallback
+  if (type === 'hub') {
+    color = config.color || '#4caf50';
+    borderColor = color;
   }
 
   const iconMarkup = renderToStaticMarkup(

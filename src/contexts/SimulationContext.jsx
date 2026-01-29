@@ -1,170 +1,230 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef } from "react";
+import { useSimulationWebSocket } from "./SimulationWebSocket";
+import { fetchSimulationData } from "../api/SimulationApi";
 
 /**
- * SimulationContext
- * Central state management for simulation setup, vehicle data, and monitoring
+ * SimulationContext gestisce lo stato della simulazione.
+ * 
+ * ARCHITETTURA DATI:
+ * - All'avvio: fetchSimulationData() crea istanze Vehicle/Hub tramite factory (createVehicleFromAPI, createHubFromAPI)
+ * - Le istanze sono salvate in vehiclesRef/hubsRef come "fonte di verità" mutabile
+ * - La WebSocket invia dati dinamici (soc, state, pos, ecc.)
+ * - updateMonitoringData() aggiorna le istanze esistenti con vehicle.updateFromWebSocket()/hub.updateFromWebSocket()
+ * - I componenti React ricevono snapshot immutabili tramite toJSON()
  */
-const SimulationContext = createContext();
+const SimulationContext = createContext(null);
 
 export const SimulationProvider = ({ children }) => {
-  // Setup configuration
-  const [vehicleConfig, setVehicleConfig] = useState(null);
-  const [chargingHubs, setChargingHubs] = useState(null);
-
-  // Vehicle list
-  const [vehicles, setVehicles] = useState([]);
-  const [selectedVehicleId, setSelectedVehicleId] = useState(null);
-
-  // Simulation state
+  // === STATO SIMULAZIONE ===
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
-  const [simulationId, setSimulationId] = useState(null);
 
-  // Monitoring data (real-time updates)
-  const [monitoringVehicles, setMonitoringVehicles] = useState([]);
-  const [monitoringHubs, setMonitoringHubs] = useState([]);
+  // === REGISTRY (fonte di verità - istanze mutabili) ===
+  const vehiclesRef = useRef([]); // array di istanze Vehicle
+  const hubsRef = useRef([]);     // array di istanze Hub
+  const registryReadyRef = useRef(false); // La WS non deve aggiornare finché il registry non è pronto
+
+  // === STATE REACT (snapshot plain objects per i componenti) ===
+  const [vehicles, setVehicles] = useState([]);  // plain objects
+  const [hubs, setHubs] = useState([]);          // plain objects
   const [simulationStats, setSimulationStats] = useState({
     totalVehicles: 0,
-    vehiclesCharging: 0,
-    vehiclesMoving: 0,
-    vehiclesIdle: 0,
+    vehicleCounts: {
+      moving: 0,
+      charging: 0,
+      stopped: 0,
+      parked: 0,
+      idle: 0,
+    },
     saturatedHubs: 0,
     averageSoC: 0,
   });
 
-  // Setup phase: store initial config
-  const initializeSetup = useCallback((config, hubs) => {
-    console.log('[SimulationContext] Initializing setup with hubs:', hubs);
-    setVehicleConfig(config);
-    setChargingHubs(hubs);
-  }, []);
+  /**
+   * Callback per aggiornamento dati da WebSocket
+   * Muta le istanze nel registry, poi pubblica nuovi snapshot
+   */
+  const updateMonitoringData = useCallback((wsVehicles, wsHubs) => {
 
-  // Vehicle generation: store vehicles after inspection
-  const setGeneratedVehicles = useCallback((vehicleList) => {
-    setVehicles(vehicleList);
-    if (vehicleList.length > 0) {
-      setSelectedVehicleId(vehicleList[0].id);
+    if (!registryReadyRef.current) {
+      console.warn("[SimulationContext] WS ricevuto ma registry non pronto");
+      return;
     }
+
+    // Aggiorna le istanze Vehicle nel registry
+    vehiclesRef.current.forEach(vehicle => {
+      const wsV = wsVehicles.find(w => w.id === vehicle.id);
+      if (wsV) {
+        vehicle.updateFromWebSocket(wsV);
+      }
+    });
+
+    // Aggiorna le istanze Hub nel registry
+    hubsRef.current.forEach(hub => {
+      const wsH = wsHubs.find(w => w.id === hub.id);
+      if (wsH) {
+        hub.updateFromWebSocket(wsH);
+      }
+    });
+
+    // Pubblica nuovi snapshot (plain objects) per React
+    const vehiclesSnapshot = vehiclesRef.current.map(v => v.toJSON());
+    const hubsSnapshot = hubsRef.current.map(h => h.toJSON());
+
+    setVehicles(vehiclesSnapshot);
+    setHubs(hubsSnapshot);
+
+    // Calcola e pubblica stats aggiornate
+    const stats = computeSimulationStats(vehiclesSnapshot, hubsSnapshot);
+    setSimulationStats(stats);
+
+    console.log("[SimulationContext] WS update - snapshot pubblicati");
+    console.log("Veicoli:", vehiclesSnapshot);
+    console.log("Hubs:", hubsSnapshot);
   }, []);
 
-  // Delete a vehicle from inspection
-  const deleteVehicle = useCallback((vehicleId) => {
-    setVehicles((prev) => prev.filter((v) => v.id !== vehicleId));
-    if (selectedVehicleId === vehicleId) {
-      setVehicles((prevVehicles) => {
-        const remaining = prevVehicles.filter((v) => v.id !== vehicleId);
-        setSelectedVehicleId(remaining.length > 0 ? remaining[0].id : null);
-        return remaining;
-      });
-    }
-  }, [selectedVehicleId]);
+  // WebSocket
+  const { connect, disconnect, connected: wsConnected } = useSimulationWebSocket(updateMonitoringData);
 
-  // Update a vehicle's route/SoC in inspection
-  const updateVehicle = useCallback((vehicleId, updates) => {
-    setVehicles((prev) =>
-      prev.map((v) => (v.id === vehicleId ? { ...v, ...updates } : v))
-    );
-  }, []);
+  /**
+   * Calcola le statistiche della simulazione dai plain objects
+   */
+  const computeSimulationStats = (vehiclesData, hubsData) => {
+    const totalVehicles = vehiclesData.length;
+    
+    const vehiclesCharging = vehiclesData.filter(
+      v => (v.state || '').toLowerCase() === 'charging'
+    ).length;
 
-  // Start simulation: transition from setup to monitoring
-  const startSimulation = useCallback((simId, providedHubs = null) => {
-    const hubsToUse = providedHubs || chargingHubs;
-    console.log('[SimulationContext] Starting simulation with hubs:', hubsToUse);
-    setIsSimulationRunning(true);
-    setSimulationId(simId);
-    // Initialize monitoring vehicles from inspection vehicles
-    setMonitoringVehicles(
-      vehicles.map((v) => ({
-        ...v,
-        pos: v.startPosition,
-        state: 'idle',
-        soc: v.initialSoC,
-        heading: 0,
-        speed: 0,
-        chargingHubId: null,
-      }))
-    );
-    // Initialize monitoring hubs from setup hubs
-    if (hubsToUse) {
-      console.log('[SimulationContext] Setting monitoring hubs:', hubsToUse);
-      setMonitoringHubs(
-        hubsToUse.map((h) => ({
-          ...h,
-          occupancy: { normal: 0, fast: 0 },
-        }))
-      );
-    } else {
-      console.warn('[SimulationContext] No hubs provided to startSimulation');
-    }
-  }, [vehicles, chargingHubs]);
+    const vehiclesMoving = vehiclesData.filter(
+      v => (v.state || '').toLowerCase() === 'moving'
+    ).length;
 
-  // Stop simulation
-  const stopSimulation = useCallback(() => {
-    setIsSimulationRunning(false);
-    setSimulationId(null);
-    setMonitoringVehicles([]);
-    setMonitoringHubs([]);
-  }, []);
+    const vehiclesIdle = vehiclesData.filter(
+      v => (v.state || '').toLowerCase() === 'idle'
+    ).length;
 
-  // Update monitoring vehicles (from WebSocket/mock)
-  const updateMonitoringData = useCallback((vehiclesList, hubsList, stats) => {
-    setMonitoringVehicles(vehiclesList);
-    setMonitoringHubs(hubsList);
-    if (stats) {
-      setSimulationStats(stats);
-    }
-  }, []);
+    const vehiclesStopped = vehiclesData.filter(
+      v => (v.state || '').toLowerCase() === 'stopped'
+    ).length;
 
-  // Check if setup is complete
-  const isSetupComplete = useCallback(() => {
-    return (
-      vehicleConfig &&
-      chargingHubs &&
-      vehicles.length > 0 &&
-      vehicleConfig.totalVehicles > 0
-    );
-  }, [vehicleConfig, chargingHubs, vehicles]);
+    const vehiclesParked = vehiclesData.filter(
+      v => (v.state || '').toLowerCase() === 'parked'
+    ).length;
 
-  const value = {
-    // Setup data
-    vehicleConfig,
-    chargingHubs,
-    initializeSetup,
+    const saturatedHubs = hubsData.filter(h => h.isSaturated).length;
+    const averageSoC = totalVehicles > 0
+      ? vehiclesData.reduce((sum, v) => sum + v.soc, 0) / totalVehicles
+      : 0;
 
-    // Vehicle inspection
-    vehicles,
-    selectedVehicleId,
-    setSelectedVehicleId,
-    setGeneratedVehicles,
-    deleteVehicle,
-    updateVehicle,
-
-    // Simulation state
-    isSimulationRunning,
-    simulationId,
-    startSimulation,
-    stopSimulation,
-
-    // Monitoring data
-    monitoringVehicles,
-    monitoringHubs,
-    simulationStats,
-    updateMonitoringData,
-
-    // Helpers
-    isSetupComplete,
+    return {
+      totalVehicles,
+      vehicleCounts: {
+        moving:   vehiclesMoving,
+        parked:   vehiclesParked,
+        charging: vehiclesCharging,
+        idle:     vehiclesIdle,
+        stopped:  vehiclesStopped,
+      },
+      saturatedHubs,
+      averageSoC: Math.round(averageSoC),
+    };
   };
 
-  return (
-    <SimulationContext.Provider value={value}>{children}</SimulationContext.Provider>
-  );
+  /**
+   * Start simulazione: fetch API, crea istanze, pubblica snapshot
+   */
+  const startSimulation = useCallback(async () => {
+    setIsSimulationRunning(true);
+    try {
+      // Fetch dati da API (ritorna istanze Vehicle/Hub)
+      const { vehicles: vehicleInstances, hubs: hubInstances } = await fetchSimulationData();
+
+      // Salva istanze nel registry (fonte di verità)
+      vehiclesRef.current = vehicleInstances;
+      hubsRef.current = hubInstances;
+      registryReadyRef.current = true;
+
+
+      // Pubblica snapshot plain objects per React
+      const vehiclesSnapshot = vehicleInstances.map(v => v.toJSON());
+      const hubsSnapshot = hubInstances.map(h => h.toJSON());
+
+      setVehicles(vehiclesSnapshot);
+      setHubs(hubsSnapshot);
+
+      // Calcola stats iniziali
+      const stats = computeSimulationStats(vehiclesSnapshot, hubsSnapshot);
+      setSimulationStats(stats);
+
+      console.log("[SimulationContext] Init completato - snapshot pubblicati");
+      console.log("Veicoli:", vehiclesSnapshot);
+      console.log("Hubs:", hubsSnapshot);
+
+      // Collegamento WS
+      connect();
+    } catch (e) {
+      console.error("[SimulationContext] Errore fetch dati iniziali:", e);
+      setIsSimulationRunning(false);
+    }
+  }, [connect]);
+
+  /**
+   * Stop simulazione: chiudi WS, svuota registry e state
+   */
+  const stopSimulation = useCallback(() => {
+    disconnect();
+    setIsSimulationRunning(false);
+
+    // Svuota registry
+    vehiclesRef.current = [];
+    hubsRef.current = [];
+    registryReadyRef.current = false;
+
+    // Svuota state React
+    setVehicles([]);
+    setHubs([]);
+    setSimulationStats({
+      totalVehicles: 0,
+      vehicleCounts: {
+        moving:   0,
+        charging: 0,
+        idle:     0,
+        stopped:  0,
+      },
+      saturatedHubs: 0,
+      averageSoC: 0,
+    });
+  }, [disconnect]);
+
+
+  const isSetupComplete = useCallback(() => {
+    return true;
+  }, []);
+
+  // === INTERFACCIA ESPOSTA AI COMPONENTI ===
+  const value = {
+    // Stato
+    isSimulationRunning,
+    wsConnected,
+    simulationStats,
+    isSetupComplete,
+
+    // Dati (plain objects, mai istanze di classe)
+    vehicles,
+    hubs,
+
+    // Azioni
+    startSimulation,
+    stopSimulation,
+  };
+
+  return <SimulationContext.Provider value={value}>{children}</SimulationContext.Provider>;
 };
 
 export const useSimulation = () => {
-  const context = useContext(SimulationContext);
-  if (!context) {
-    throw new Error('useSimulation must be used within SimulationProvider');
-  }
-  return context;
+  const ctx = useContext(SimulationContext);
+  if (!ctx) throw new Error("useSimulation must be used within SimulationProvider");
+  return ctx;
 };
 
 export default SimulationContext;

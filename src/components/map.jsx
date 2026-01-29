@@ -2,16 +2,13 @@ import React, { useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Tooltip } from 'react-leaflet';
 import { createCustomIcon } from './PoiIcon';
 import 'leaflet/dist/leaflet.css';
-import { POI_TYPES } from './poiRegistry';
-import { Box, Typography, Chip, LinearProgress } from '@mui/material';
+import { Box, Typography, Chip, LinearProgress, Card, CardContent, Divider, Stack} from '@mui/material';
 
-const MapView = ({ pois, onSelectPoi, selectedVehicle }) => {
-  // Memoize POI processing to avoid unnecessary re-renders
+const MapView = ({ pois, onSelectPoi, selectedVehicle, stateConfig }) => {
   const processedPois = useMemo(() => {
     return pois.filter(poi => poi && poi.pos && poi.pos.length === 2);
   }, [pois]);
 
-  // Ensure POI has proper type
   const getPoiType = (poi) => {
     if (poi.type === 'vehicle') return 'vehicle';
     if (poi.type === 'hub') return 'hub';
@@ -19,86 +16,100 @@ const MapView = ({ pois, onSelectPoi, selectedVehicle }) => {
   };
 
   return (
-    <MapContainer 
-      center={[52.52, 13.40]} 
-      zoom={13} 
-      style={{ height: "100%", width: "100%" }}
-    >
+    <MapContainer center={[52.52, 13.40]} zoom={13} style={{ height: "100%", width: "100%" }}>
       <TileLayer 
         url="https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
         attribution='&copy; OpenStreetMap contributors'
       />
-      
+
       {processedPois.map((poi) => {
         const poiType = getPoiType(poi);
-        const config = POI_TYPES[poiType] || POI_TYPES.hub;
 
-        // Render vehicles with state-dependent styling
+        // Vehicle markers
         if (poiType === 'vehicle') {
           const isSelected = selectedVehicle?.id === poi.id;
 
+          // Usa STATE_CONFIG per ottenere label e colore
+          const stateKey = (poi.state).toLowerCase();
+          const stateCfg = stateConfig[stateKey] || stateConfig.unknown;
+
           return (
             <React.Fragment key={poi.id}>
-              {/* Main vehicle marker */}
               <Marker
                 position={poi.pos}
-                icon={createCustomIcon('vehicle', poi.state)}
-                eventHandlers={{
-                  click: () => onSelectPoi(poi),
-                }}
+                icon={createCustomIcon('vehicle', stateKey, stateConfig)}
+                eventHandlers={{ click: () => onSelectPoi(poi) }}
               >
                 <Popup>
-                  <Box sx={{ minWidth: 200 }}>
-                    <Typography variant="subtitle2" fontWeight="bold">
-                      {poi.model}
-                    </Typography>
-                    <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
-                      ID: {poi.name || poi.id}
-                    </Typography>
-                    
-                    <Box sx={{ mt: 1, mb: 1 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        State:
+                <Card 
+                  key={`popup-card-${poi.id}-${poi.soc}`}
+                  sx={{ minWidth: 220, boxShadow: 'none', border: 'none', bgcolor: 'transparent' }}
+                >
+                  <CardContent sx={{ p: 1, '&:last-child': { pb: 1 } }}>
+                    {/* Header con Titolo e Badge Stato */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                      <Typography variant="subtitle2" fontWeight="bold" sx={{ mr: 1 }}>
+                        {poi.id}
                       </Typography>
                       <Chip
-                        label={poi.state?.toUpperCase() || 'UNKNOWN'}
+                        label={stateCfg.label}
                         size="small"
-                        color={
-                          poi.state === 'charging'
-                            ? 'success'
-                            : poi.state === 'moving'
-                              ? 'primary'
-                              : 'default'
-                        }
-                        variant="outlined"
-                        sx={{ ml: 1, height: 24 }}
+                        sx={{ 
+                          height: 20, 
+                          fontSize: '0.65rem', 
+                          bgcolor: stateCfg.color, 
+                          color: '#fff',
+                          fontWeight: 'bold'
+                        }}
                       />
                     </Box>
 
-                    <Typography variant="caption" color="text.secondary">
-                      Battery: {poi.soc}%
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      {poi.displayName}
                     </Typography>
-                    <LinearProgress
-                      variant="determinate"
-                      value={poi.soc}
-                      sx={{ height: 6, borderRadius: 3, mt: 1 }}
-                    />
 
-                    {poi.speed !== undefined && poi.state === 'moving' && (
-                      <Typography variant="caption" display="block" sx={{ mt: 1 }}>
-                        Speed: {Math.round(poi.speed)} km/h
-                      </Typography>
-                    )}
+                    <Divider sx={{ my: 1 }} />
 
-                    {poi.chargingHubId && poi.state === 'charging' && (
-                      <Typography variant="caption" display="block" sx={{ mt: 1 }}>
-                        Hub: {poi.chargingHubId}
-                      </Typography>
-                    )}
-                  </Box>
-                </Popup>
-                
-                {/* Tooltip on hover */}
+                    {/* Dettagli Dinamici */}
+                    <Stack spacing={0.5}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="caption" color="text.secondary">SoC:</Typography>
+                        <Typography variant="caption" fontWeight="bold">{poi.soc}%</Typography>
+                      </Box>
+                      
+                      {/* Barra del SoC rapida */}
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={Math.min(poi.soc*100 || 0, 100)}
+                        sx={{ 
+                          mt: 1, 
+                          height: 4, 
+                          borderRadius: 2,
+                          bgcolor: 'action.hover',
+                          '& .MuiLinearProgress-bar': {
+                            bgcolor: (poi.soc*100 || 0) < 20 ? 'error.main' : 'success.main'
+                          }
+                        }} 
+                      />
+
+                      {poi.speed !== undefined && stateKey === 'moving' && (
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Typography variant="caption" color="text.secondary">Velocità:</Typography>
+                          <Typography variant="caption" fontWeight="bold">{Math.round(poi.speed)} km/h</Typography>
+                        </Box>
+                      )}
+
+                      {poi.chargingHubId && stateKey === 'charging' && (
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Typography variant="caption" color="text.secondary">Hub:</Typography>
+                          <Typography variant="caption" fontWeight="bold">{poi.chargingHubId}</Typography>
+                        </Box>
+                      )}
+                    </Stack>
+                  </CardContent>
+                </Card>
+              </Popup>
+
                 <Tooltip direction="top" offset={[0, -40]} permanent={false} sticky>
                   <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
                     {poi.name || poi.id}
@@ -106,7 +117,6 @@ const MapView = ({ pois, onSelectPoi, selectedVehicle }) => {
                 </Tooltip>
               </Marker>
 
-              {/* Selection indicator circle around vehicle */}
               {isSelected && (
                 <CircleMarker
                   center={poi.pos}
@@ -121,69 +131,52 @@ const MapView = ({ pois, onSelectPoi, selectedVehicle }) => {
           );
         }
 
-        // Render hubs and other fixed infrastructure
+        // Hub markers
         return (
           <Marker
             key={poi.id}
             position={poi.pos}
             icon={createCustomIcon(poiType)}
-            eventHandlers={{
-              click: () => onSelectPoi(poi),
-            }}
+            eventHandlers={{ click: () => onSelectPoi(poi) }}
           >
             <Popup>
-              {poiType === 'hub' ? (
-                <Box sx={{ minWidth: 200 }}>
-                  <Typography variant="subtitle2" fontWeight="bold">
-                    {poi.name}
-                  </Typography>
+              <Box sx={{ minWidth: 200 }}>
+                <Typography variant="subtitle2" fontWeight="bold">{poi.name || poi.id}</Typography>
+
+                {poi.totalCapacity?.normal > 0 && (
                   <Box sx={{ mt: 1 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      Normal Stations
-                    </Typography>
-                    <Typography variant="body2">
-                      {poi.occupancy?.normal || 0} / {poi.totalCapacity?.normal || 0}
-                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography variant="caption">Normal</Typography>
+                      <Typography variant="caption" fontWeight="bold">
+                        {poi.occupancy?.normal || 0} / {poi.totalCapacity?.normal}
+                      </Typography>
+                    </Box>
                     <LinearProgress
                       variant="determinate"
-                      value={
-                        ((poi.occupancy?.normal || 0) / (poi.totalCapacity?.normal || 1)) * 100
-                      }
-                      sx={{ height: 6, borderRadius: 3, mt: 1 }}
+                      value={Math.min((poi.occupancy?.normal || 0) / poi.totalCapacity.normal * 100, 100)}
+                      sx={{ height: 6, borderRadius: 3 }}
                     />
                   </Box>
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      Fast Charging Stations
-                    </Typography>
-                    <Typography variant="body2">
-                      {poi.occupancy?.fast || 0} / {poi.totalCapacity?.fast || 0}
-                    </Typography>
+                )}
+
+                {poi.totalCapacity?.fast > 0 && (
+                  <Box sx={{ mt: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography variant="caption">Fast</Typography>
+                      <Typography variant="caption" fontWeight="bold">
+                        {poi.occupancy?.fast || 0} / {poi.totalCapacity?.fast}
+                      </Typography>
+                    </Box>
                     <LinearProgress
                       variant="determinate"
-                      value={((poi.occupancy?.fast || 0) / (poi.totalCapacity?.fast || 1)) * 100}
-                      sx={{ height: 6, borderRadius: 3, mt: 1 }}
+                      value={Math.min((poi.occupancy?.fast || 0) / poi.totalCapacity.fast * 100, 100)}
+                      sx={{ height: 6, borderRadius: 3 }}
                     />
                   </Box>
-                </Box>
-              ) : (
-                <Box sx={{ minWidth: 150 }}>
-                  <Typography variant="subtitle2" fontWeight="bold">
-                    {poi.name || poi.id}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Type: {POI_TYPES[poiType]?.label || poiType}
-                  </Typography>
-                  {poi.alt && (
-                    <Typography variant="caption" display="block" sx={{ mt: 1 }}>
-                      Altitude: {poi.alt}m
-                    </Typography>
-                  )}
-                </Box>
-              )}
+                )}
+              </Box>
             </Popup>
 
-            {/* Tooltip on hover */}
             <Tooltip direction="top" offset={[0, -40]} permanent={false} sticky>
               <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
                 {poi.name || poi.id}

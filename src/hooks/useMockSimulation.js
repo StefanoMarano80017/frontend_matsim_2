@@ -4,14 +4,15 @@ import { useSimulation } from '../contexts/SimulationContext.jsx';
 /**
  * Hook to manage mock simulation updates
  * Updates vehicle positions and SoC in real-time
- * Integrates with SimulationContext for centralized state
+ * 
+ * NOTA: Questo hook è per testing/demo e non aggiorna più direttamente il Context.
+ * In produzione, i dati vengono aggiornati via WebSocket.
  */
 export const useMockSimulation = () => {
   const {
     isSimulationRunning,
-    monitoringVehicles,
-    monitoringHubs,
-    updateMonitoringData,
+    vehicles,
+    hubs,
   } = useSimulation();
 
   const vehicleStateRef = useRef({});
@@ -20,10 +21,11 @@ export const useMockSimulation = () => {
   // Initialize vehicle state for smooth tracking
   const initializeVehicleStates = useCallback(() => {
     vehicleStateRef.current = {};
-    monitoringVehicles.forEach((v) => {
+    vehicles.forEach((v) => {
       if (!vehicleStateRef.current[v.id]) {
+        const pos = Array.isArray(v.pos) ? [...v.pos] : [52.52, 13.40];
         vehicleStateRef.current[v.id] = {
-          pos: [...v.pos],
+          pos,
           direction: {
             lat: (Math.random() - 0.5) * 0.001,
             lng: (Math.random() - 0.5) * 0.001,
@@ -36,11 +38,11 @@ export const useMockSimulation = () => {
         };
       }
     });
-  }, [monitoringVehicles]);
+  }, [vehicles]);
 
   // Generate mock update
   const generateMockUpdate = useCallback(() => {
-    const updatedVehicles = monitoringVehicles.map((vehicle) => {
+    const updatedVehicles = vehicles.map((vehicle) => {
       const state = vehicleStateRef.current[vehicle.id];
       if (!state) return vehicle;
 
@@ -103,7 +105,7 @@ export const useMockSimulation = () => {
     });
 
     // Update hub occupancy
-    const updatedHubs = monitoringHubs.map((hub) => {
+    const updatedHubs = hubs.map((hub) => {
       const chargingCount = updatedVehicles.filter(
         (v) => v.state === 'charging' && v.chargingHubId === hub.id
       ).length;
@@ -139,9 +141,10 @@ export const useMockSimulation = () => {
     };
 
     return { vehicles: updatedVehicles, hubs: updatedHubs, stats };
-  }, [monitoringVehicles, monitoringHubs]);
+  }, [vehicles, hubs]);
 
   // Start mock simulation when simulation is running
+  // NOTA: Questo hook non aggiorna più il Context - solo per debug/demo locale
   useEffect(() => {
     if (!isSimulationRunning) return;
 
@@ -149,8 +152,9 @@ export const useMockSimulation = () => {
 
     // Update every 500ms for smooth, realistic movement
     intervalRef.current = setInterval(() => {
-      const { vehicles, hubs, stats } = generateMockUpdate();
-      updateMonitoringData(vehicles, hubs, stats);
+      const { vehicles: mockVehicles, hubs: mockHubs, stats } = generateMockUpdate();
+      // In produzione i dati arrivano dalla WS, questo è solo per logging/debug
+      console.log("[useMockSimulation] Mock update:", { mockVehicles: mockVehicles.length, stats });
     }, 500);
 
     return () => {
@@ -158,7 +162,7 @@ export const useMockSimulation = () => {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isSimulationRunning, initializeVehicleStates, generateMockUpdate, updateMonitoringData]);
+  }, [isSimulationRunning, initializeVehicleStates, generateMockUpdate]);
 
   return { isRunning: isSimulationRunning };
 };

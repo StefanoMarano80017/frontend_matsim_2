@@ -1,522 +1,278 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { styled } from '@mui/material/styles';
-
 import {
-  Paper,
-  Typography,
-  Tabs,
-  Tab,
-  Box,
-  Stack,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
-  Card,
-  CardContent,
-  LinearProgress,
-  Chip,
-  Divider,
-  IconButton,
-  TextField,
+  Paper, Typography, Tabs, Tab, Box, Stack, List, ListItem, ListItemIcon,
+  ListItemText, Card, CardContent, LinearProgress, Chip, Divider, IconButton,
+  TextField, Tooltip, Collapse, CardActions
 } from '@mui/material';
-import PushPinIcon from '@mui/icons-material/PushPin';
-import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
-import DirectionsCarIcon from '@mui/icons-material/DirectionsCar';
-import EvStationIcon from '@mui/icons-material/EvStation';
-import SignalCellularAltIcon from '@mui/icons-material/SignalCellularAlt';
-import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
-import SearchIcon from '@mui/icons-material/Search';
-import DoneIcon from '@mui/icons-material/Done';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import CardActions from '@mui/material/CardActions';
-import Collapse from '@mui/material/Collapse';
 
+// Icone
+import {
+  PushPin as PushPinIcon,
+  PushPinOutlined as PushPinOutlinedIcon,
+  DirectionsCar as DirectionsCarIcon,
+  EvStation as EvStationIcon,
+  SignalCellularAlt as SignalCellularAltIcon,
+  FiberManualRecord as FiberManualRecordIcon,
+  Search as SearchIcon,
+  Done as DoneIcon,
+  ExpandMore as ExpandMoreIcon,
+  PlayArrow as PlayArrowIcon,
+  Stop as StopIcon
+} from '@mui/icons-material';
 
+import HubCard from "./HubCard.jsx";
+
+// Componente Styled per l'espansione dei Hub
 const ExpandMore = styled((props) => {
   const { expand, ...other } = props;
   return <IconButton {...other} />;
-})(({ theme }) => ({
+})(({ theme, expand }) => ({
   marginLeft: 'auto',
   transition: theme.transitions.create('transform', {
     duration: theme.transitions.duration.shortest,
   }),
-  variants: [
-    {
-      props: ({ expand }) => !expand,
-      style: {
-        transform: 'rotate(0deg)',
-      },
-    },
-    {
-      props: ({ expand }) => !!expand,
-      style: {
-        transform: 'rotate(180deg)',
-      },
-    },
-  ],
+  transform: expand ? 'rotate(180deg)' : 'rotate(0deg)',
 }));
 
+// --- SOTTO-COMPONENTE: FILTRI ---
+const FilterChips = ({ filters, onFiltersChange, stateConfig}) => (
+  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', py: 0.5 }}>
+    <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+      Filters
+    </Typography>
+    <Stack direction="row" spacing={1}>
+      {Object.entries(stateConfig).map(([key, cfg]) => {
+        if (!cfg.filterKey) return null;
+        const isActive = filters[cfg.filterKey];
+        return (
+          <Chip
+            key={key}
+            label={cfg.label}
+            size="small"
+            onClick={() => onFiltersChange({ ...filters, [cfg.filterKey]: !isActive })}
+            sx={{
+              height: 22,
+              fontSize: '0.65rem',
+              fontWeight: isActive ? 700 : 400,
+              backgroundColor: isActive ? cfg.color : 'transparent',
+              color: isActive ? '#fff' : 'text.secondary',
+              borderColor: cfg.color,
+              border: isActive ? 'none' : '1px solid',
+              '&:hover': {
+                backgroundColor: isActive ? cfg.color : 'rgba(0,0,0,0.04)',
+                opacity: 0.9,
+                transform: 'translateY(-1px)'
+              }
+            }}
+          />
+        );
+      })}
+    </Stack>
+  </Box>
+);
+
+// --- SOTTO-COMPONENTE: STATS VEICOLI ---
+const VehicleStats = ({ simulationStats, config}) => {
+  return (
+    <>
+      {Object.entries(simulationStats.vehicleCounts).map(([state, value]) => (
+        <Box key={state} sx={{ mb: 1 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+            <Typography variant="caption" sx={{ textTransform: 'capitalize' }}>
+              {state}
+            </Typography>
+            <Typography variant="caption" fontWeight="bold">
+              {value}
+            </Typography>
+          </Box>
+          <LinearProgress
+            variant="determinate"
+            value={
+              simulationStats.totalVehicles > 0
+                ? (value / simulationStats.totalVehicles) * 100
+                : 0
+            }
+            sx={{
+              height: 6,
+              borderRadius: 3,
+              bgcolor: `${config[state].color}22`,
+              '& .MuiLinearProgress-bar': {
+                bgcolor: config[state].color,
+              },
+            }}
+          />
+        </Box>
+      ))}
+    </>
+  );
+};
+
+// --- SOTTO-COMPONENTE: VOCE MENù
+const DataCard = ({ title, value}) => (
+  <Card variant="outlined">
+    <CardContent sx={{ p: '8px 16px', '&:last-child': { pb: '8px' } }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography variant="body2" color="text.secondary">{title}</Typography>
+        <Typography variant="h6" fontWeight="bold" color="primary">{value}</Typography>
+      </Box>
+    </CardContent>
+  </Card>
+);
+
+// --- LISTA VEICOLI
+const VehicleList = ({ vehicles, onSelectVehicle, pinnedVehicles, togglePin, stateConfig }) => {
+  return (
+    <List dense sx={{ maxHeight: 400 }}>
+      {vehicles.map((v) => {
+        const config = stateConfig[(v.state || '').toLowerCase()] || stateConfig.unknown;
+        const isPinned = pinnedVehicles[v.id];
+        return (
+          <ListItem
+            key={v.id}
+            onClick={() => onSelectVehicle(v)}
+            sx={{ 
+              borderRadius: 1, mb: 0.5, borderLeft: `4px solid ${isPinned ? '#2196f3' : 'transparent'}`,
+              '&:hover': { bgcolor: 'action.hover', cursor: 'pointer' } 
+            }}
+            secondaryAction={
+              <IconButton size="small" onClick={(e) => togglePin(e, v.id)}>
+                {isPinned ? <PushPinIcon fontSize="small" color="primary" /> : <PushPinOutlinedIcon fontSize="small" />}
+              </IconButton>
+            }
+          >
+            <ListItemIcon sx={{ minWidth: 35 }}>
+              <DirectionsCarIcon />
+            </ListItemIcon>
+            <ListItemText 
+              primary={v.displayName} 
+              secondary={
+                <Stack direction="row" spacing={1} alignItems="center" mt={0.5}>
+                  <Chip 
+                    label={config.label} 
+                    size="small" 
+                    variant="outlined" 
+                    sx={{ height: 18, fontSize: '0.6rem', color: config.color, borderColor: config.color }} 
+                  />
+                  <Typography variant="caption">SoC: {v.soc}%</Typography>
+                  <Typography variant="caption">Km: {v.kmDriven}</Typography>
+                </Stack>
+              } 
+            />
+          </ListItem>
+        );
+      })}
+    </List>
+  );
+};
+
+
 const EnhancedFloatingMenu = ({
-  vehicles,
-  hubs,
-  stats,
+  vehicles = [],
+  hubs = [],
+  stats = {},
   onSelectVehicle,
   filters,
   onFiltersChange,
   isConnected,
+  stateConfig,
 }) => {
   const [tabIndex, setTabIndex] = useState(0);
-  
-  const [expanded, setExpanded] = React.useState(false);
-  const handleExpandClick = () => {
-    setExpanded(!expanded);
-  };
-
-
-  const [pinnedVehicles, setPinnedVehicles] = useState({});
+  const [isSimulating, setIsSimulating] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [pinnedVehicles, setPinnedVehicles] = useState({});
 
-  const togglePin = (vehicleId) => {
-    setPinnedVehicles((prev) => ({
-      ...prev,
-      [vehicleId]: !prev[vehicleId],
-    }));
+  // Gestione Pin
+  const togglePin = (e, id) => {
+    e.stopPropagation();
+    setPinnedVehicles(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const getFilteredVehicles = () => {
-    return vehicles.filter((v) =>
-      v.name && v.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  };
-
-  const getStateColor = (state) => {
-    switch (state) {
-      case 'charging':
-        return '#4caf50';
-      case 'moving':
-        return '#2196f3';
-      case 'idle':
-        return '#ff9800';
-      default:
-        return '#757575';
-    }
-  };
-
-  const getStateLabel = (state) => {
-    return state ? state.charAt(0).toUpperCase() + state.slice(1) : 'Unknown';
-  };
+  // Logica filtraggio e ordinamento veicoli (usa direttamente Vehicle model)
+  const processedVehicles = useMemo(() => {
+    console.log("Rista..."); // Debug per vedere se scatta ad ogni update WS
+    return [...vehicles] // Creiamo una copia locale
+      .filter(v => v.displayName.toLowerCase().includes(searchQuery.toLowerCase()))
+      .sort((a, b) => (pinnedVehicles[b.id] || 0) - (pinnedVehicles[a.id] || 0));
+  }, [vehicles, searchQuery, pinnedVehicles]);
 
   return (
     <Paper
       elevation={4}
       sx={{
-        position: 'absolute',
-        top: '20px',
-        left: '20px',
-        width: '380px',
-        zIndex: 1000,
-        borderRadius: '12px',
-        overflow: 'hidden',
-        maxHeight: '90vh',
-        display: 'flex',
-        flexDirection: 'column',
+        position: 'absolute', top: 20, left: 20, width: 380, zIndex: 1000,
+        borderRadius: '12px', overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column',
       }}
     >
       {/* Header */}
-      <Box
-        sx={{
-          p: 2,
-          bgcolor: 'primary.main',
-          color: 'white',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
+      <Box sx={{ p: 2, bgcolor: 'primary.main', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
-          <Typography variant="h6" fontWeight="bold">
-            Simulation Dashboard
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-            <FiberManualRecordIcon
-              sx={{
-                fontSize: '12px',
-                color: isConnected ? '#4caf50' : '#f44336',
-              }}
-            />
-            <Typography variant="caption">
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </Typography>
-          </Box>
+          <Typography variant="h6" fontWeight="bold">Simulation Dashboard</Typography>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 0.5 }}>
+            <FiberManualRecordIcon sx={{ fontSize: 12, color: isConnected ? '#4caf50' : '#f44336' }} />
+            <Typography variant="caption">{isConnected ? 'Connected' : 'Disconnected'}</Typography>
+          </Stack>
         </Box>
+        <Tooltip title={isSimulating ? "Stop Simulation" : "Start Simulation"}>
+          <IconButton 
+            onClick={() => setIsSimulating(!isSimulating)}
+            sx={{ bgcolor: isSimulating ? '#f44336' : '#4caf50', color: 'white', '&:hover': { opacity: 0.8, bgcolor: isSimulating ? 'error.dark' : 'success.dark' }, width: 45, height: 45 }}
+          >
+            {isSimulating ? <StopIcon /> : <PlayArrowIcon />}
+          </IconButton>
+        </Tooltip>
       </Box>
 
       {/* Tabs */}
-      <Tabs
-        value={tabIndex}
-        onChange={(e, newVal) => setTabIndex(newVal)}
-        variant="fullWidth"
-        indicatorColor="primary"
-        sx={{
-          backgroundColor: '#fafafa',
-          borderBottom: '1px solid #e0e0e0',
-        }}
-      >
-        <Tab
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <SignalCellularAltIcon sx={{ fontSize: '20px' }} />
-              <span>Stats</span>
-            </Box>
-          }
-        />
-        <Tab
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <DirectionsCarIcon sx={{ fontSize: '20px' }} />
-              <span>Vehicles</span>
-            </Box>
-          }
-        />
-        <Tab
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <EvStationIcon sx={{ fontSize: '20px' }} />
-              <span>Hubs</span>
-            </Box>
-          }
-        />
+      <Tabs value={tabIndex} onChange={(_, n) => setTabIndex(n)} variant="fullWidth" sx={{ bgcolor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
+        <Tab icon={<SignalCellularAltIcon fontSize="small" />} label="Stats" />
+        <Tab icon={<DirectionsCarIcon fontSize="small" />} label="Vehicles" />
+        <Tab icon={<EvStationIcon fontSize="small" />} label="Hubs" />
       </Tabs>
 
-      {/* Content */}
       <Box sx={{ p: 2, overflowY: 'auto', flexGrow: 1 }}>
         {/* TAB 0: STATISTICS */}
         {tabIndex === 0 && (
           <Stack spacing={2}>
-            {/* Total Vehicles & Average SoC */}
-            <Card variant="outlined" sx={{ minWidth: 200 }}>
-                <CardContent 
-                    sx={{ 
-                    padding: '8px 16px', // Riduce il padding verticale
-                    '&:last-child': { pb: '8px' } // Rimuove il padding extra che MUI aggiunge all'ultimo elemento
-                    }}
-                >
-                    <Box 
-                    sx={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center' // Allinea verticalmente i due testi
-                    }}
-                    >
-                    <Typography variant="body2" color="text.secondary">
-                        Total Vehicles
-                    </Typography>
-                    <Typography variant="h6" fontWeight="bold" color="primary" sx={{ lineHeight: 1 }}>
-                        {stats.totalVehicles}
-                    </Typography>
-                    </Box>
-                </CardContent>
-            </Card>
 
-            <Card variant="outlined" sx={{ minWidth: 200 }}>
-                <CardContent 
-                    sx={{ 
-                    padding: '8px 16px', // Riduce il padding verticale
-                    '&:last-child': { pb: '8px' } // Rimuove il padding extra che MUI aggiunge all'ultimo elemento
-                    }}
-                >
-                    <Box 
-                    sx={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center' // Allinea verticalmente i due testi
-                    }}
-                    >
-                    <Typography variant="body2" color="text.secondary">
-                        Average SoC
-                    </Typography>
-                    <Typography variant="h6" fontWeight="bold" color="primary" sx={{ lineHeight: 1 }}>
-                         {stats.averageSoC}%
-                    </Typography>
-                    </Box>
-                </CardContent>
-            </Card>
+            <DataCard title="Total Vehicles" value={stats.totalVehicles || 0} />
+            <DataCard title="Average SoC"    value={stats.averageSoC    || 0} />  
+            <DataCard title="Saturated Hubs" value={stats.saturatedHubs || 0} />
 
+            {/* Vehicle States */}
             <Card variant="outlined">
-              <CardContent sx={{ pb: 1.5 }}>
-                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                  Vehicle States
-                </Typography>
+              <CardContent sx={{ p: 1.5 }}>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>Vehicle States</Typography>
                 <Stack spacing={1.5}>
-                  <Box>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="caption">Moving</Typography>
-                      <Typography variant="caption" fontWeight="bold">
-                        {stats.vehiclesMoving}
-                      </Typography>
-                    </Box>
-                    <LinearProgress
-                      variant="determinate"
-                      value={
-                        stats.totalVehicles > 0
-                          ? (stats.vehiclesMoving / stats.totalVehicles) * 100
-                          : 0
-                      }
-                      sx={{
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: '#e3f2fd',
-                        '& .MuiLinearProgress-bar': {
-                          backgroundColor: '#2196f3',
-                        },
-                      }}
-                    />
-                  </Box>
-
-                  <Box>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="caption">Charging</Typography>
-                      <Typography variant="caption" fontWeight="bold">
-                        {stats.vehiclesCharging}
-                      </Typography>
-                    </Box>
-                    <LinearProgress
-                      variant="determinate"
-                      value={
-                        stats.totalVehicles > 0
-                          ? (stats.vehiclesCharging / stats.totalVehicles) * 100
-                          : 0
-                      }
-                      sx={{
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: '#e8f5e9',
-                        '& .MuiLinearProgress-bar': {
-                          backgroundColor: '#4caf50',
-                        },
-                      }}
-                    />
-                  </Box>
-
-                  <Box>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="caption">Idle</Typography>
-                      <Typography variant="caption" fontWeight="bold">
-                        {stats.vehiclesIdle}
-                      </Typography>
-                    </Box>
-                    <LinearProgress
-                      variant="determinate"
-                      value={
-                        stats.totalVehicles > 0
-                          ? (stats.vehiclesIdle / stats.totalVehicles) * 100
-                          : 0
-                      }
-                      sx={{
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: '#fff3e0',
-                        '& .MuiLinearProgress-bar': {
-                          backgroundColor: '#ff9800',
-                        },
-                      }}
-                    />
-                  </Box>
+                  <VehicleStats simulationStats={stats} config={stateConfig} />
                 </Stack>
               </CardContent>
             </Card>
 
-            <Card variant="outlined" sx={{ minWidth: 200 }}>
-                <CardContent 
-                    sx={{ 
-                    padding: '8px 16px', // Riduce il padding verticale
-                    '&:last-child': { pb: '8px' } // Rimuove il padding extra che MUI aggiunge all'ultimo elemento
-                    }}
-                >
-                    <Box 
-                        sx={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center' // Allinea verticalmente i due testi
-                        }}
-                    >
-                    <Typography variant="body2" color="text.secondary">
-                        Saturated Hubs
-                    </Typography>
-                    <Typography variant="h6" fontWeight="bold" color={stats.saturatedHubs > 0 ? 'error' : 'success'} sx={{ lineHeight: 1 }}>
-                         {stats.saturatedHubs}
-                    </Typography>
-                    </Box>
-                </CardContent>
-            </Card>
           </Stack>
         )}
 
         {/* TAB 1: VEHICLES */}
         {tabIndex === 1 && (
           <Stack spacing={2}>
-            {/* Search Bar */}
             <TextField
               placeholder="Search vehicles..."
-              size="small"
-              fullWidth
+              size="small" fullWidth
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <Box sx={{ pr: 1, display: 'flex', alignItems: 'center' }}>
-                    <SearchIcon fontSize="small" color="action" />
-                  </Box>
-                ),
-              }}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  fontSize: '0.875rem',
-                },
-              }}
+              InputProps={{ startAdornment: <SearchIcon fontSize="small" color="action" sx={{ mr: 1 }} /> }}
             />
-
-            {/* Filters */}
-           <Box sx={{ 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'space-between', 
-                    width: '100%',
-                    py: 0.5 // Padding verticale minimo
-                }}>
-                <Typography 
-                    variant="caption" 
-                    sx={{ 
-                    fontWeight: 600, 
-                    color: 'text.secondary', 
-                    textTransform: 'uppercase', 
-                    letterSpacing: 0.5 
-                    }}
-                >
-                    Filters
-                </Typography>
-
-                <Stack direction="row" spacing={1}>
-                    {[
-                    { id: 'showMoving', label: 'Moving', color: 'success' },
-                    { id: 'showCharging', label: 'Charging', color: 'warning' },
-                    { id: 'showIdle', label: 'Idle', color: 'error' },
-                    ].map((item) => {
-                    const isActive = filters[item.id];
-                    return (
-                        <Chip
-                        key={item.id}
-                        label={item.label}
-                        size="small"
-                        onClick={() => onFiltersChange({ ...filters, [item.id]: !isActive })}
-                        variant={isActive ? "filled" : "outlined"}
-                        color={isActive ? item.color : "default"}
-                        deleteIcon={<DoneIcon />}
-                        sx={{ 
-                            height: 22, // Super sottile
-                            fontSize: '0.65rem',
-                            fontWeight: isActive ? 700 : 400,
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            // Effetti grafici per far capire che è cliccabile
-                            '&:hover': {
-                            backgroundColor: isActive ? undefined : 'action.hover',
-                            transform: 'translateY(-1px)',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-                            },
-                            '&:active': {
-                            transform: 'translateY(0px)'
-                            }
-                        }}
-                        />
-                    );
-                    })}
-                </Stack>
-            </Box>
-
+            
+            <FilterChips filters={filters} onFiltersChange={onFiltersChange} stateConfig={stateConfig} />
             <Divider />
 
-            {/* Vehicle List */}
-            {vehicles.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 2 }}>
-                No vehicles available
-              </Typography>
-            ) : getFilteredVehicles().length === 0 ? (
-              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 2 }}>
-                No vehicles match "{searchQuery}"
-              </Typography>
-            ) : (
-              <List dense sx={{ maxHeight: 300, overflowY: 'auto' }}>
-                {/* Pinned vehicles first, then unpinned */}
-                {[
-                  ...getFilteredVehicles().filter((v) => pinnedVehicles[v.id]),
-                  ...getFilteredVehicles().filter((v) => !pinnedVehicles[v.id]),
-                ].map((vehicle) => (
-                  <ListItem
-                    key={vehicle.id}
-                    secondaryAction={
-                      <IconButton
-                        edge="end"
-                        size="small"
-                        onClick={() => togglePin(vehicle.id)}
-                      >
-                        {pinnedVehicles[vehicle.id] ? (
-                          <PushPinIcon fontSize="small" color="primary" />
-                        ) : (
-                          <PushPinOutlinedIcon fontSize="small" />
-                        )}
-                      </IconButton>
-                    }
-                    sx={{
-                      cursor: 'pointer',
-                      borderLeft: pinnedVehicles[vehicle.id]
-                        ? '4px solid #2196f3'
-                        : '4px solid transparent',
-                      pl: 1.5,
-                      '&:hover': {
-                        backgroundColor: '#f5f5f5',
-                      },
-                    }}
-                    onClick={() => onSelectVehicle(vehicle)}
-                  >
-                    <ListItemIcon sx={{ minWidth: 40 }}>
-                      <Box
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: getStateColor(vehicle.state),
-                        }}
-                      >
-                        <DirectionsCarIcon fontSize="small" />
-                      </Box>
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={vehicle.name}
-                      secondary={
-                        <Box sx={{ display: 'flex', gap: 1, mt: 0.5, alignItems: 'center' }}>
-                          <Chip
-                            label={getStateLabel(vehicle.state)}
-                            size="small"
-                            variant="outlined"
-                            sx={{
-                              height: 20,
-                              borderColor: getStateColor(vehicle.state),
-                              color: getStateColor(vehicle.state),
-                              '& .MuiChip-label': { px: 1 },
-                            }}
-                          />
-                          <Typography variant="caption" color="text.secondary">
-                            {vehicle.soc}%
-                          </Typography>
-                        </Box>
-                      }
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            )}
+            <VehicleList
+              vehicles={processedVehicles}
+              onSelectVehicle={onSelectVehicle}
+              pinnedVehicles={pinnedVehicles}
+              togglePin={togglePin}
+              stateConfig={stateConfig}
+            ></VehicleList>
           </Stack>
         )}
 
@@ -524,138 +280,13 @@ const EnhancedFloatingMenu = ({
         {tabIndex === 2 && (
           <Stack spacing={2}>
             {hubs.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 2 }}>
-                No hubs available
-              </Typography>
+              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 2 }}>No hubs available</Typography>
             ) : (
-              hubs.map((hub) => {
-                const normalOccupancy = (hub.occupancy?.normal || 0) / (hub.totalCapacity?.normal || 1);
-                const fastOccupancy = (hub.occupancy?.fast || 0) / (hub.totalCapacity?.fast || 1);
-                const isSaturated = normalOccupancy >= 1 || fastOccupancy >= 1;
-
-                return (
-                  <Card
-                    key={hub.id}
-                    variant="outlined"
-                    sx={{
-                      borderLeft: isSaturated ? '4px solid #f44336' : '4px solid #4caf50',
-                    }}
-                  >
-                    <CardContent sx={{ pb: 0.5 }}>
-                      <Typography variant="subtitle1" fontWeight="bold">
-                        {hub.name}
-                      </Typography>
-
-                      {/* Normal Stations */}
-                      <Box sx={{ mt: 1 }}>
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            mb: 0.5,
-                          }}
-                        >
-                          <Typography variant="caption">Normal</Typography>
-                          <Typography variant="caption" fontWeight="bold">
-                            {hub.occupancy?.normal || 0} / {hub.totalCapacity?.normal || 0}
-                          </Typography>
-                        </Box>
-                        <LinearProgress
-                          variant="determinate"
-                          value={Math.min(normalOccupancy * 100, 100)}
-                          sx={{ height: 6, borderRadius: 3 }}
-                        />
-                      </Box>
-
-                      {/* Fast Charging */}
-                      {(hub.totalCapacity?.fast || 0) > 0 && (
-                        <Box sx={{ mt: 1 }}>
-                          <Box
-                            sx={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              mb: 0.5,
-                            }}
-                          >
-                            <Typography variant="caption">Fast</Typography>
-                            <Typography variant="caption" fontWeight="bold">
-                              {hub.occupancy?.fast || 0} / {hub.totalCapacity?.fast || 0}
-                            </Typography>
-                          </Box>
-                          <LinearProgress
-                            variant="determinate"
-                            value={Math.min(fastOccupancy * 100, 100)}
-                            sx={{ height: 6, borderRadius: 3 }}
-                          />
-                        </Box>
-                      )}
-                    </CardContent>
-                    
-                    <CardActions disableSpacing>
-                      <ExpandMore
-                        expand={expanded}
-                        onClick={handleExpandClick}
-                        aria-expanded={expanded}
-                        aria-label="show more"
-                      >
-                        <ExpandMoreIcon />
-                      </ExpandMore>
-                    </CardActions>
-                    
-                    <Collapse in={expanded} timeout="auto" unmountOnExit>
-                      <List dense sx={{ maxHeight: 300, overflowY: 'auto'}}>
-                      
-                       {/*chargers.map((charger, index) => (
-                         
-                        ))*/}
-
-                         <ListItem
-                            key={1}
-                            sx={{
-                              cursor: 'pointer',
-                              '&:hover': { backgroundColor: '#f5f5f5' },
-                            }}
-                          >
-                            {/* Numero progressivo */}
-                            <Typography
-                              variant="caption"
-                              sx={{ width: 24, fontWeight: 600, color: 'text.secondary' }}
-                            >
-                              1.
-                            </Typography>
-
-                            <ListItemText
-                              primary={
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                                   {/* Tipologia */}
-                                  <Typography variant="body2" fontWeight={600}>
-                                    ACC
-                                  </Typography>
-
-                                  {/* Potenza */}
-                                  <Typography variant="caption" color="text.secondary">
-                                   40/55 kW
-                                  </Typography>
-                                </Box>
-                              }
-                              secondary={
-                                <Box sx={{ display: 'flex', gap: 1, mt: 0.5, display: 'flex', justifyContent: 'space-between'}}>
-                                  <Typography variant="caption" color="text.secondary">
-                                    Ev_1
-                                  </Typography>
-                                  <Typography variant="caption" color="text.secondary">
-                                    SoC: 40%
-                                  </Typography>
-                                </Box>
-                              }
-                            />
-                          </ListItem>
-                      </List>
-
-                    </Collapse>
-                  </Card>
-                );
-              })
+              <Box>
+                {hubs.map((hub) => (
+                  <HubCard key={hub.id} hub={hub} />
+                ))}
+              </Box>
             )}
           </Stack>
         )}
